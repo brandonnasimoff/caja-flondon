@@ -120,10 +120,13 @@ function App(){
       }
     });
     let ahorro=0;
-    for(let i=0;i<=m;i++){
-      let mt=0;
-      expenses.forEach(e=>{const em=mI(e.mes);const cu=e.cuotas||1;if(i>=em&&i<em+cu)mt+=e.monto/cu});
-      ahorro+=(budget-mt);
+    if(expenses.length>0){
+      const startM=Math.min(...expenses.map(e=>mI(e.mes)));
+      for(let i=startM;i<=m;i++){
+        let mt=0;
+        expenses.forEach(e=>{const em=mI(e.mes);const cu=e.cuotas||1;if(i>=em&&i<em+cu)mt+=e.monto/cu});
+        ahorro+=(budget-mt);
+      }
     }
     const half=tot/2;
     return{tot,br,fl,bCat,bMet,half,brDiff:br-half,flDiff:fl-half,ahorro};
