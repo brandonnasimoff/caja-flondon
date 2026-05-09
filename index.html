@@ -46,15 +46,27 @@ const ICONS={"Alquiler":"🏠","Expensas":"🏢","Servicios":"⚡","Comida":"�
 
 const fmt=n=>{const a=Math.abs(Math.round(n));return(n<0?"-":"")+"$"+a.toLocaleString("es-AR")};
 const fmtK=n=>{const a=Math.abs(n);if(a>=1e6)return(n<0?"-":"")+"$"+(a/1e6).toFixed(a>=1e7?0:1)+"M";if(a>=1e3)return(n<0?"-":"")+"$"+Math.round(a/1e3)+"K";return fmt(n)};
-const mI=m=>MESES.indexOf(m);
+const norm=s=>String(s||"").trim().toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g,"");
+const mI=m=>{
+  if(m==null||m==="")return -1;
+  if(typeof m==="number")return m>=0&&m<12?m:-1;
+  if(m instanceof Date)return m.getMonth();
+  const s=norm(m);
+  if(!s)return -1;
+  let i=MESES.findIndex(x=>norm(x)===s);if(i>=0)return i;
+  i=MESES_S.findIndex(x=>norm(x)===s);if(i>=0)return i;
+  i=MESES.findIndex(x=>norm(x).startsWith(s.slice(0,3)));if(i>=0)return i;
+  const n=parseInt(s,10);if(!isNaN(n)&&n>=1&&n<=12)return n-1;
+  return -1;
+};
 const todayShort=()=>{const d=new Date();return String(d.getDate()).padStart(2,"0")+"/"+String(d.getMonth()+1).padStart(2,"0")};
-const parseFecha=(s,fallbackMonth)=>{
+const parseFecha=(s)=>{
   if(!s)return null;
-  const m=s.match(/^(\d{1,2})\/(\d{1,2})(?:\/(\d{2,4}))?$/);
-  if(!m)return null;
-  const day=+m[1],mon=+m[2]-1;let yr=m[3]?+m[3]:new Date().getFullYear();
-  if(yr<100)yr+=2000;
-  return new Date(yr,mon,day);
+  if(s instanceof Date)return isNaN(s)?null:s;
+  const str=String(s).trim();
+  let m=str.match(/^(\d{1,2})[\/\-\.](\d{1,2})(?:[\/\-\.](\d{2,4}))?$/);
+  if(m){const day=+m[1],mon=+m[2]-1;let yr=m[3]?+m[3]:new Date().getFullYear();if(yr<100)yr+=2000;return new Date(yr,mon,day);}
+  const d=new Date(str);return isNaN(d)?null:d;
 };
 const ymd=d=>d.toISOString().slice(0,10);
 
@@ -532,10 +544,10 @@ function Hist({allExps,month,onDel,onEdit,onDup}){
     let arr=allExps;
     if(mode==="month"){
       const m=mI(month);
-      arr=arr.filter(e=>{const em=mI(e.mes);const cu=e.cuotas||1;return m>=em&&m<em+cu});
-    }else{
+      arr=arr.filter(e=>{const em=mI(e.mes);if(em<0)return true;const cu=e.cuotas||1;return m>=em&&m<em+cu});
+    }else if(mode==="range"){
       const fD=new Date(from);const tD=new Date(to);tD.setHours(23,59,59);
-      arr=arr.filter(e=>{const d=parseFecha(e.fecha,e.mes);if(!d)return false;d.setFullYear(yearNow);return d>=fD&&d<=tD});
+      arr=arr.filter(e=>{const d=parseFecha(e.fecha);if(!d){const em=mI(e.mes);if(em<0)return true;const fb=new Date(yearNow,em,15);return fb>=fD&&fb<=tD;}return d>=fD&&d<=tD});
     }
     if(filtP!=="all")arr=arr.filter(e=>e.persona===filtP);
     if(filtCat!=="all")arr=arr.filter(e=>e.categoria===filtCat);
@@ -552,14 +564,15 @@ function Hist({allExps,month,onDel,onEdit,onDup}){
     <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
       <div>
         <div style={{fontSize:22,fontWeight:800}}>Historial</div>
-        <div style={{fontSize:12,color:"#666",marginTop:2}}>{list.length} gastos · {fmt(total)}</div>
+        <div style={{fontSize:12,color:"#666",marginTop:2}}>{list.length} de {allExps.length} gastos · {fmt(total)}</div>
       </div>
       <button onClick={()=>setShowFilt(!showFilt)} style={{...S.smallBtn,position:"relative",padding:"8px 14px"}}>🔍 Filtros{activeFilters>0&&<span style={{position:"absolute",top:-4,right:-4,background:"#8FB07A",color:"#0E0E0E",fontSize:9,fontWeight:800,borderRadius:10,minWidth:16,height:16,display:"flex",alignItems:"center",justifyContent:"center",padding:"0 4px"}}>{activeFilters}</span>}</button>
     </div>
 
     <div style={{display:"flex",gap:6,marginTop:12,marginBottom:8}}>
-      <button onClick={()=>setMode("month")} style={{flex:1,padding:"8px 0",borderRadius:8,border:`1px solid ${mode==="month"?"#8FB07A":"#222840"}`,background:mode==="month"?"#152218":"transparent",color:mode==="month"?"#8FB07A":"#666",fontSize:12,fontWeight:600,cursor:"pointer"}}>Mes ({month})</button>
-      <button onClick={()=>setMode("range")} style={{flex:1,padding:"8px 0",borderRadius:8,border:`1px solid ${mode==="range"?"#8FB07A":"#222840"}`,background:mode==="range"?"#152218":"transparent",color:mode==="range"?"#8FB07A":"#666",fontSize:12,fontWeight:600,cursor:"pointer"}}>Rango fechas</button>
+      <button onClick={()=>setMode("month")} style={{flex:1,padding:"8px 4px",borderRadius:8,border:`1px solid ${mode==="month"?"#8FB07A":"#222840"}`,background:mode==="month"?"#152218":"transparent",color:mode==="month"?"#8FB07A":"#666",fontSize:11,fontWeight:600,cursor:"pointer"}}>Mes ({month})</button>
+      <button onClick={()=>setMode("range")} style={{flex:1,padding:"8px 4px",borderRadius:8,border:`1px solid ${mode==="range"?"#8FB07A":"#222840"}`,background:mode==="range"?"#152218":"transparent",color:mode==="range"?"#8FB07A":"#666",fontSize:11,fontWeight:600,cursor:"pointer"}}>Rango</button>
+      <button onClick={()=>setMode("all")} style={{flex:1,padding:"8px 4px",borderRadius:8,border:`1px solid ${mode==="all"?"#8FB07A":"#222840"}`,background:mode==="all"?"#152218":"transparent",color:mode==="all"?"#8FB07A":"#666",fontSize:11,fontWeight:600,cursor:"pointer"}}>Todos</button>
     </div>
     {mode==="range"&&<div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:8}}>
       <div><div style={{...S.sLabel,fontSize:10}}>Desde</div><input type="date" value={from} onChange={e=>setFrom(e.target.value)} style={{...S.input,marginTop:4,padding:10,fontSize:13}}/></div>
