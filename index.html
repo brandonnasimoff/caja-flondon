@@ -81,7 +81,8 @@ const encodeSplit=(clean,sp)=>{
 const LS={
   api:"caja-flondon-api",
   lastVals:"caja-flondon-last",
-  installDism:"caja-flondon-install-dismissed"
+  installDism:"caja-flondon-install-dismissed",
+  fixed:"caja-flondon-fixed"
 };
 
 function App(){
@@ -100,6 +101,9 @@ function App(){
   const [editingExp,setEditingExp]=useState(null);
   const [prefill,setPrefill]=useState(null);
   const [installPrompt,setInstallPrompt]=useState(null);
+  const [fixed,setFixed]=useState(()=>{try{return JSON.parse(localStorage.getItem(LS.fixed)||"[]")}catch(e){return[]}});
+
+  const saveFixed=arr=>{setFixed(arr);localStorage.setItem(LS.fixed,JSON.stringify(arr))};
 
   const flash=(m,kind)=>{setToast({m,kind:kind||"ok"});setTimeout(()=>setToast(null),2400)};
 
@@ -140,6 +144,24 @@ function App(){
   const updExpense=async(row,exp)=>{await apiPost({action:"deleteExpense",row});await apiPost({action:"addExpense",expense:exp});flash("✓ Gasto actualizado")};
   const addSettle=async s=>{await apiPost({action:"addSettlement",settlement:s});flash("✓ Pago saldado")};
   const updBudget=async v=>{setBudget(v);await apiPost({action:"updateBudget",budget:v});flash("Presupuesto actualizado")};
+
+  const bulkLoadFixed=async(targetMonth)=>{
+    if(fixed.length===0)return;
+    if(!confirm(`Cargar ${fixed.length} gastos fijos a ${targetMonth}? Total: ${fmt(fixed.reduce((a,f)=>a+f.monto,0))}`))return;
+    setSyncing(true);
+    try{
+      for(const t of fixed){
+        await fetch(apiUrl,{method:"POST",body:JSON.stringify({action:"addExpense",expense:{fecha:todayShort(),mes:targetMonth,categoria:t.categoria,descripcion:t.descripcion,persona:t.persona,metodo:t.metodo,monto:t.monto,cuotas:1}}),headers:{"Content-Type":"text/plain"}});
+      }
+      await fetchData();
+      flash(`✓ ${fixed.length} gastos fijos cargados a ${targetMonth}`);
+    }catch(err){flash("Error: "+err.message,"err")}
+    setSyncing(false);
+  };
+
+  const loadOneFixed=async(t,targetMonth)=>{
+    await addExpense({fecha:todayShort(),mes:targetMonth,categoria:t.categoria,descripcion:t.descripcion,persona:t.persona,metodo:t.metodo,monto:t.monto,cuotas:1});
+  };
 
   const startEdit=e=>{setEditingExp(e);setPrefill(e);setView("add")};
   const startDup=e=>{setEditingExp(null);setPrefill({...e,fecha:todayShort(),mes:month});setView("add")};
@@ -255,13 +277,14 @@ function App(){
       {view==="add"&&<Add onAdd={addExpense} onUpd={updExpense} editing={editingExp} prefill={prefill} month={month} onDone={()=>{setEditingExp(null);setPrefill(null);setView("history");}}/>}
       {view==="history"&&<Hist allExps={expenses} month={month} onDel={delExpense} onEdit={startEdit} onDup={startDup}/>}
       {view==="balance"&&<Bal d={md} month={month} onSettle={addSettle} setts={settlements.filter(s=>s.mes===month)}/>}
+      {view==="fixed"&&<Fixed fixed={fixed} saveFixed={saveFixed} bulkLoad={bulkLoadFixed} loadOne={loadOneFixed} month={month}/>}
       {view==="settings"&&<Settings apiUrl={apiUrl} expenses={expenses} settlements={settlements} onSave={u=>{localStorage.setItem(LS.api,u);setApiUrl(u);fetchData(u);setView("dashboard");flash("Conectado")}} onDisconnect={()=>{if(confirm("¿Desconectar de Google Sheets? Los datos siguen en la planilla.")){localStorage.removeItem(LS.api);setApiUrl("");setConfigured(false);}}}/>}
     </div>
 
     {view!=="add"&&<button onClick={goAdd} style={S.fab} aria-label="Cargar gasto">＋</button>}
 
     <div style={S.navWrap}><div style={S.nav}>
-      {[{k:"dashboard",i:"📊",l:"Inicio"},{k:"history",i:"📋",l:"Historial"},{k:"balance",i:"⚖️",l:"Balance"},{k:"settings",i:"⚙️",l:"Config"}].map(({k,i,l})=>(
+      {[{k:"dashboard",i:"📊",l:"Inicio"},{k:"history",i:"📋",l:"Historial"},{k:"fixed",i:"📌",l:"Fijos"},{k:"balance",i:"⚖️",l:"Balance"},{k:"settings",i:"⚙️",l:"Config"}].map(({k,i,l})=>(
         <button key={k} onClick={()=>setView(k)} style={{...S.navBtn,color:view===k?"#8FB07A":"#555"}}>
           {view===k&&<div style={S.navDot}/>}
           <span style={{fontSize:20}}>{i}</span>
@@ -648,6 +671,116 @@ function Bal({d,month,onSettle,setts}){
         </div>
       </div>))}
     </div>)}
+  </div>);
+}
+
+// ===== FIXED (gastos recurrentes) =====
+function Fixed({fixed,saveFixed,bulkLoad,loadOne,month}){
+  const [showForm,setShowForm]=useState(false);
+  const [editingId,setEditingId]=useState(null);
+  const [f,setF]=useState({nombre:"",categoria:"",persona:"",metodo:"",monto:"",split:"50/50",personal:"",brPct:50});
+  const reset=()=>{setF({nombre:"",categoria:"",persona:"",metodo:"",monto:"",split:"50/50",personal:"",brPct:50});setEditingId(null);setShowForm(false)};
+  const ok=f.nombre&&f.categoria&&f.persona&&f.metodo&&+f.monto>0&&(f.split!=="personal"||f.personal);
+  const save=()=>{
+    if(!ok)return;
+    const sp=f.split==="personal"?{kind:"personal",personal:f.personal}:f.split==="custom"?{kind:"custom",brPct:f.brPct/100,flPct:(100-f.brPct)/100}:{kind:"50/50"};
+    const tpl={id:editingId||"t"+Date.now(),nombre:f.nombre.trim(),categoria:f.categoria,persona:f.persona,metodo:f.metodo,monto:+f.monto,descripcion:encodeSplit(f.nombre.trim(),sp)};
+    if(editingId)saveFixed(fixed.map(x=>x.id===editingId?tpl:x));
+    else saveFixed([...fixed,tpl]);
+    reset();
+  };
+  const startEdit=t=>{
+    const sp=parseSplit(t.descripcion);
+    setF({nombre:sp.clean||t.nombre,categoria:t.categoria,persona:t.persona,metodo:t.metodo,monto:String(t.monto),split:sp.kind,personal:sp.personal||"",brPct:Math.round(sp.brPct*100)});
+    setEditingId(t.id);setShowForm(true);
+  };
+  const del=id=>{if(confirm("¿Eliminar plantilla?"))saveFixed(fixed.filter(x=>x.id!==id))};
+  const total=fixed.reduce((a,x)=>a+x.monto,0);
+  return(<div style={{paddingTop:14}} className="fade">
+    <div style={{fontSize:22,fontWeight:800}}>Gastos fijos</div>
+    <div style={{fontSize:12,color:"#666",marginBottom:14}}>Plantillas que se repiten cada mes (alquiler, internet, streaming…)</div>
+
+    {fixed.length>0&&<div style={{...S.card,background:"linear-gradient(135deg,#152218,#1a2e22)",borderColor:"#264030"}}>
+      <div style={S.sLabel}>Total mensual de fijos</div>
+      <div style={{fontSize:26,fontWeight:800,color:"#8FB07A",marginTop:4}}>{fmt(total)}</div>
+      <div style={{fontSize:11,color:"#888",marginTop:4}}>{fixed.length} plantilla{fixed.length!==1?"s":""}</div>
+      <button onClick={()=>bulkLoad(month)} style={{...S.greenBtn,width:"100%",padding:14,marginTop:12,fontSize:14}}>⚡ Cargar todos a {month}</button>
+    </div>}
+
+    {fixed.map(t=>{
+      const sp=parseSplit(t.descripcion);
+      return(<div key={t.id} style={{...S.card,padding:"12px 14px",marginBottom:6}}>
+        <div style={{display:"flex",justifyContent:"space-between",gap:8}}>
+          <div style={{display:"flex",gap:10,flex:1,minWidth:0}}>
+            <span style={{fontSize:20,marginTop:2}}>{ICONS[t.categoria]||"📦"}</span>
+            <div style={{minWidth:0,flex:1}}>
+              <div style={{fontSize:14,fontWeight:700}}>{t.nombre}</div>
+              <div style={{fontSize:11,color:"#666",marginTop:2}}>
+                <span style={{color:t.persona==="Brandon"?"#4A6378":"#8FB07A",fontWeight:600}}>{t.persona}</span> · {t.metodo}
+                {sp.kind!=="50/50"&&<span style={{marginLeft:6,padding:"1px 6px",background:"#1a1e2a",borderRadius:4,color:"#8FB07A",fontSize:10,fontWeight:700}}>{sp.kind==="personal"?`Solo ${sp.personal[0]}`:`${Math.round(sp.brPct*100)}/${100-Math.round(sp.brPct*100)}`}</span>}
+              </div>
+            </div>
+          </div>
+          <div style={{textAlign:"right",flexShrink:0}}>
+            <div style={{fontSize:14,fontWeight:700}}>{fmtK(t.monto)}</div>
+          </div>
+        </div>
+        <div style={{display:"flex",gap:14,marginTop:8}}>
+          <button onClick={()=>{if(confirm(`Cargar "${t.nombre}" a ${month}?`))loadOne(t,month)}} style={{...S.linkBtn,color:"#8FB07A"}}>⚡ Cargar a {month}</button>
+          <button onClick={()=>startEdit(t)} style={S.linkBtn}>✏️ Editar</button>
+          <button onClick={()=>del(t.id)} style={{...S.linkBtn,color:"#e74c3c"}}>🗑 Borrar</button>
+        </div>
+      </div>);
+    })}
+
+    {!showForm&&<button onClick={()=>setShowForm(true)} style={{width:"100%",padding:16,marginTop:10,borderRadius:12,border:"1px dashed #2a3050",background:"transparent",color:"#8FB07A",fontSize:14,fontWeight:700,cursor:"pointer"}}>+ Crear plantilla nueva</button>}
+
+    {showForm&&<div style={S.card} className="slide">
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
+        <div style={{fontSize:14,fontWeight:700}}>{editingId?"Editar plantilla":"Nueva plantilla"}</div>
+        <button onClick={reset} style={S.iconBtn}>✕</button>
+      </div>
+
+      <div style={S.sLabel}>Nombre</div>
+      <input value={f.nombre} onChange={e=>setF(p=>({...p,nombre:e.target.value}))} placeholder="Alquiler, Internet, Netflix…" style={{...S.input,marginTop:6,marginBottom:12}}/>
+
+      <div style={S.sLabel}>Monto mensual</div>
+      <input type="number" inputMode="decimal" value={f.monto} onChange={e=>setF(p=>({...p,monto:e.target.value}))} placeholder="0" style={{...S.input,marginTop:6,marginBottom:12,fontSize:20,fontWeight:800,textAlign:"center"}}/>
+
+      <div style={S.sLabel}>Categoría</div>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:6,margin:"6px 0 12px"}}>
+        {CATS.map(c=>(<button key={c} onClick={()=>setF(p=>({...p,categoria:c}))} style={{padding:"10px 4px",borderRadius:8,border:`1px solid ${f.categoria===c?"#8FB07A":"#222840"}`,background:f.categoria===c?"#152218":"#0d0f14",color:f.categoria===c?"#8FB07A":"#888",fontSize:11,fontWeight:600,cursor:"pointer",minHeight:48}}><div style={{fontSize:16}}>{ICONS[c]}</div><div>{c}</div></button>))}
+      </div>
+
+      <div style={S.sLabel}>Quién paga</div>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6,margin:"6px 0 12px"}}>
+        {PERS.map(p=>(<button key={p} onClick={()=>setF(prev=>({...prev,persona:p}))} style={{padding:14,borderRadius:10,border:`2px solid ${f.persona===p?(p==="Brandon"?"#4A6378":"#8FB07A"):"#222840"}`,background:f.persona===p?(p==="Brandon"?"#151f2c":"#152218"):"#0d0f14",color:"#e8e8e4",fontSize:14,fontWeight:700,cursor:"pointer"}}>{p}</button>))}
+      </div>
+
+      <div style={S.sLabel}>Método</div>
+      <select value={f.metodo} onChange={e=>setF(p=>({...p,metodo:e.target.value}))} style={{...S.input,marginTop:6,marginBottom:12,cursor:"pointer"}}><option value="">Elegir…</option>{METS.map(m=><option key={m}>{m}</option>)}</select>
+
+      <div style={S.sLabel}>División</div>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:6,margin:"6px 0 10px"}}>
+        {[["50/50","50/50"],["personal","Personal"],["custom","Custom"]].map(([k,l])=>(
+          <button key={k} onClick={()=>setF(p=>({...p,split:k}))} style={{padding:10,borderRadius:8,border:`1px solid ${f.split===k?"#8FB07A":"#222840"}`,background:f.split===k?"#152218":"#0d0f14",color:f.split===k?"#8FB07A":"#888",fontSize:11,fontWeight:600,cursor:"pointer"}}>{l}</button>
+        ))}
+      </div>
+      {f.split==="personal"&&<div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6,marginBottom:10}}>
+        {PERS.map(p=>(<button key={p} onClick={()=>setF(prev=>({...prev,personal:p}))} style={{padding:10,borderRadius:8,border:`1px solid ${f.personal===p?"#8FB07A":"#222840"}`,background:f.personal===p?"#152218":"#0d0f14",color:f.personal===p?"#8FB07A":"#888",fontSize:11,fontWeight:600,cursor:"pointer"}}>Solo {p}</button>))}
+      </div>}
+      {f.split==="custom"&&<div style={{marginBottom:10}}>
+        <div style={{display:"flex",justifyContent:"space-between",fontSize:12,color:"#888",marginBottom:6}}>
+          <span>B: <b style={{color:"#4A6378"}}>{f.brPct}%</b></span>
+          <span>F: <b style={{color:"#8FB07A"}}>{100-f.brPct}%</b></span>
+        </div>
+        <input type="range" min="0" max="100" step="5" value={f.brPct} onChange={e=>setF(p=>({...p,brPct:+e.target.value}))} style={{width:"100%",accentColor:"#8FB07A"}}/>
+      </div>}
+
+      <button onClick={save} disabled={!ok} style={{...S.greenBtn,width:"100%",padding:16,fontSize:15,opacity:ok?1:0.4,marginTop:8}}>{editingId?"Actualizar plantilla":"Guardar plantilla"}</button>
+    </div>}
+
+    {fixed.length===0&&!showForm&&<div style={{textAlign:"center",padding:"40px 0",color:"#444"}}><div style={{fontSize:42}}>📌</div><div style={{marginTop:10,fontSize:14}}>Sin plantillas todavía</div><div style={{fontSize:11,color:"#555",marginTop:4,maxWidth:280,margin:"4px auto 0",lineHeight:1.5}}>Creá plantillas para los gastos que se repiten todos los meses (alquiler, expensas, internet) y cargalos con un toque.</div></div>}
   </div>);
 }
 
