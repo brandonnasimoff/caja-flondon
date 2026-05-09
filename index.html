@@ -187,7 +187,8 @@ function App(){
     CATS.forEach(c=>bCat[c]={t:0,B:0,F:0});
     METS.forEach(mt=>bMet[mt]=0);
     expenses.forEach(e=>{
-      const em=mI(e.mes);const cu=e.cuotas||1;const mc=e.monto/cu;
+      const em=mI(e.mes);const cu=Number(e.cuotas)||1;const mc=Number(e.monto||0)/cu;
+      if(em<0)return;
       if(m>=em&&m<em+cu){
         const sp=parseSplit(e.descripcion);
         tot+=mc;
@@ -198,8 +199,9 @@ function App(){
       }
     });
     let brSettleTo=0,flSettleTo=0;
-    settlements.filter(s=>s.mes===month).forEach(s=>{
-      if(s.from==="Brandon")brSettleTo+=s.monto;else flSettleTo+=s.monto;
+    settlements.filter(s=>mI(s.mes)===m).forEach(s=>{
+      const amt=Number(s.monto)||0;
+      if(s.from==="Brandon")brSettleTo+=amt;else flSettleTo+=amt;
     });
     const imbalance=(brPaid-brOwes)+brSettleTo-flSettleTo;
     return{tot,brPaid,flPaid,brOwes,flOwes,bCat,bMet,imbalance};
@@ -288,7 +290,7 @@ function App(){
       {view==="dashboard"&&<Dash d={md} budget={budget} month={month} updBudget={updBudget} trend={trend} proj={proj} cuotas={cuotas}/>}
       {view==="add"&&<Add onAdd={addExpense} onUpd={updExpense} editing={editingExp} prefill={prefill} month={month} onDone={()=>{setEditingExp(null);setPrefill(null);setView("history");}}/>}
       {view==="history"&&<Hist allExps={expenses} month={month} onDel={delExpense} onEdit={startEdit} onDup={startDup}/>}
-      {view==="balance"&&<Bal d={md} month={month} onSettle={addSettle} setts={settlements.filter(s=>s.mes===month)}/>}
+      {view==="balance"&&<Bal d={md} month={month} onSettle={addSettle} setts={settlements.filter(s=>mI(s.mes)===mI(month))}/>}
       {view==="fixed"&&<Fixed fixed={fixed} saveFixed={saveFixed} bulkLoad={bulkLoadFixed} loadOne={loadOneFixed} month={month}/>}
       {view==="settings"&&<Settings apiUrl={apiUrl} expenses={expenses} settlements={settlements} onSave={u=>{localStorage.setItem(LS.api,u);setApiUrl(u);fetchData(u);setView("dashboard");flash("Conectado")}} onDisconnect={()=>{if(confirm("¿Desconectar de Google Sheets? Los datos siguen en la planilla.")){localStorage.removeItem(LS.api);setApiUrl("");setConfigured(false);}}}/>}
     </div>
