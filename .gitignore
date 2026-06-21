@@ -1,2 +1,8 @@
 # Build-only dependency (downloaded on demand, not needed at runtime)
 babel.min.js
+
+# Local helpers / packaging artifacts
+caja-flondon-hostinger.zip
+
+# MCP config — contains a secret API token, never commit
+.mcp.json
