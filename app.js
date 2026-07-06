@@ -134,7 +134,7 @@ const parseSplit = desc => {
 };
 const encodeSplit = (clean, sp) => {
   if (!sp || sp.kind === "50/50") return clean || "";
-  if (sp.kind === "personal") return `${clean || ""} [#sp=${sp.personal[0]}]`.trim();
+  if (sp.kind === "personal") return sp.personal ? `${clean || ""} [#sp=${sp.personal[0]}]`.trim() : clean || "";
   if (sp.kind === "custom") {
     const b = Math.round(sp.brPct * 100);
     return `${clean || ""} [#sp=${b}/${100 - b}]`.trim();
@@ -1243,7 +1243,7 @@ function Add({
     ...p,
     [k]: v
   }));
-  const ok = f.categoria && f.persona && f.metodo && f.monto && +f.monto > 0;
+  const ok = f.categoria && f.persona && f.metodo && f.monto && +f.monto > 0 && (f.split !== "personal" || f.personal);
   const fmtPreview = f.monto ? fmt(+f.monto) : "$0";
   const splitDesc = () => {
     if (f.split === "personal") return `Solo de ${f.personal}`;
