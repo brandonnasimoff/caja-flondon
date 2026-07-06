@@ -71,12 +71,11 @@ const parseFecha = s => {
   return isNaN(d) ? null : d;
 };
 const ymd = d => d.toISOString().slice(0, 10);
-// Tarjeta de Crédito en cuotas: la 1ª cuota impacta el mes SIGUIENTE al de la compra (cierre de tarjeta)
+// Tarjeta de Crédito: TODO pago con crédito impacta el mes SIGUIENTE al de la compra (cierre de tarjeta)
 const cuoStart = e => {
   const em = mI(e.mes);
   if (em < 0) return em;
-  const cu = Number(e.cuotas) || 1;
-  return em + (e.metodo === "Tarjeta de Crédito" && cu > 1 ? 1 : 0);
+  return em + (e.metodo === "Tarjeta de Crédito" ? 1 : 0);
 };
 const fmtFecha = f => {
   const d = parseFecha(f);
@@ -1560,7 +1559,17 @@ function Add({
       ...S.input,
       marginTop: 6
     }
-  }))), +f.cuotas > 1 && +f.monto > 0 && /*#__PURE__*/React.createElement("div", {
+  }))), f.metodo === "Tarjeta de Crédito" && +f.cuotas === 1 && /*#__PURE__*/React.createElement("div", {
+    style: {
+      background: "#28200f",
+      border: "1px solid #4a3a1a",
+      borderRadius: 10,
+      padding: "10px 14px",
+      marginBottom: 16,
+      fontSize: 12,
+      color: "#f39c12"
+    }
+  }, "💳 Pagado con crédito: impacta en ", /*#__PURE__*/React.createElement("b", null, MESES[(mI(f.mes) + 1) % 12]), " (cierre de tarjeta)"), +f.cuotas > 1 && +f.monto > 0 && /*#__PURE__*/React.createElement("div", {
     style: {
       background: "#152218",
       border: "1px solid #264030",

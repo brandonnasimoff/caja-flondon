@@ -32,8 +32,8 @@ const parseFecha=(s)=>{
   const d=new Date(str);return isNaN(d)?null:d;
 };
 const ymd=d=>d.toISOString().slice(0,10);
-// Tarjeta de Crédito en cuotas: la 1ª cuota impacta el mes SIGUIENTE al de la compra (cierre de tarjeta)
-const cuoStart=e=>{const em=mI(e.mes);if(em<0)return em;const cu=Number(e.cuotas)||1;return em+((e.metodo==="Tarjeta de Crédito"&&cu>1)?1:0)};
+// Tarjeta de Crédito: TODO pago con crédito impacta el mes SIGUIENTE al de la compra (cierre de tarjeta)
+const cuoStart=e=>{const em=mI(e.mes);if(em<0)return em;return em+(e.metodo==="Tarjeta de Crédito"?1:0)};
 const fmtFecha=f=>{const d=parseFecha(f);return d?String(d.getDate()).padStart(2,"0")+"/"+String(d.getMonth()+1).padStart(2,"0"):(f||"")};
 
 // SPLIT encoding inside descripcion: " [#sp=B]" personal de Brandon, " [#sp=F]" personal de Flor, " [#sp=70/30]" custom %
@@ -483,6 +483,12 @@ function Add({onAdd,onUpd,editing,prefill,month,onDone}){
       <div><div style={S.sLabel}>Mes</div><select value={f.mes} onChange={e=>u("mes",e.target.value)} style={{...S.input,marginTop:6,cursor:"pointer"}}>{MESES.map(m=><option key={m}>{m}</option>)}</select></div>
       <div><div style={S.sLabel}>Fecha (dd/mm)</div><input type="text" inputMode="numeric" value={f.fecha} onChange={e=>u("fecha",e.target.value)} placeholder="30/04" style={{...S.input,marginTop:6}}/></div>
     </div>
+
+    {f.metodo==="Tarjeta de Crédito"&&+f.cuotas===1&&(
+      <div style={{background:"#28200f",border:"1px solid #4a3a1a",borderRadius:10,padding:"10px 14px",marginBottom:16,fontSize:12,color:"#f39c12"}}>
+        💳 Pagado con crédito: impacta en <b>{MESES[(mI(f.mes)+1)%12]}</b> (cierre de tarjeta)
+      </div>
+    )}
 
     {+f.cuotas>1&&+f.monto>0&&(
       <div style={{background:"#152218",border:"1px solid #264030",borderRadius:10,padding:"12px 14px",marginBottom:16}}>
