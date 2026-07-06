@@ -71,6 +71,17 @@ const parseFecha = s => {
   return isNaN(d) ? null : d;
 };
 const ymd = d => d.toISOString().slice(0, 10);
+// Tarjeta de Crédito en cuotas: la 1ª cuota impacta el mes SIGUIENTE al de la compra (cierre de tarjeta)
+const cuoStart = e => {
+  const em = mI(e.mes);
+  if (em < 0) return em;
+  const cu = Number(e.cuotas) || 1;
+  return em + (e.metodo === "Tarjeta de Crédito" && cu > 1 ? 1 : 0);
+};
+const fmtFecha = f => {
+  const d = parseFecha(f);
+  return d ? String(d.getDate()).padStart(2, "0") + "/" + String(d.getMonth() + 1).padStart(2, "0") : f || "";
+};
 
 // SPLIT encoding inside descripcion: " [#sp=B]" personal de Brandon, " [#sp=F]" personal de Flor, " [#sp=70/30]" custom %
 const SPLIT_RE = /\s*\[#sp=([^\]]+)\]\s*$/;
@@ -343,11 +354,11 @@ function App() {
     });
     METS.forEach(mt => bMet[mt] = 0);
     expenses.forEach(e => {
-      const em = mI(e.mes);
       const cu = Number(e.cuotas) || 1;
       const mc = Number(e.monto || 0) / cu;
-      if (em < 0) return;
-      if (m >= em && m < em + cu) {
+      const st = cuoStart(e);
+      if (st < 0) return;
+      if (m >= st && m < st + cu) {
         const sp = parseSplit(e.descripcion);
         tot += mc;
         if (e.persona === "Brandon") brPaid += mc;else flPaid += mc;
@@ -395,9 +406,10 @@ function App() {
       }
       let t = 0;
       expenses.forEach(e => {
-        const em = mI(e.mes);
-        const cu = e.cuotas || 1;
-        if (i >= em && i < em + cu) t += e.monto / cu;
+        const st = cuoStart(e);
+        if (st < 0) return;
+        const cu = Number(e.cuotas) || 1;
+        if (i >= st && i < st + cu) t += e.monto / cu;
       });
       arr.push({
         m: MESES_S[i],
@@ -418,14 +430,15 @@ function App() {
       const items = [];
       let total = 0;
       expenses.forEach(e => {
-        const em = mI(e.mes);
-        const cu = e.cuotas || 1;
-        if (i >= em && i < em + cu && cu > 1) {
+        const st = cuoStart(e);
+        if (st < 0) return;
+        const cu = Number(e.cuotas) || 1;
+        if (i >= st && i < st + cu && cu > 1) {
           const mc = e.monto / cu;
           items.push({
             ...e,
             mc,
-            n: i - em + 1,
+            n: i - st + 1,
             cu
           });
           total += mc;
@@ -461,9 +474,10 @@ function App() {
   const mExp = useMemo(() => {
     const m = mI(month);
     return expenses.filter(e => {
-      const em = mI(e.mes);
-      const cu = e.cuotas || 1;
-      return m >= em && m < em + cu;
+      const st = cuoStart(e);
+      if (st < 0) return false;
+      const cu = Number(e.cuotas) || 1;
+      return m >= st && m < st + cu;
     });
   }, [expenses, month]);
 
@@ -1578,7 +1592,13 @@ function Add({
     }
   }, Array.from({
     length: Math.min(+f.cuotas, 8)
-  }, (_, i) => MESES_S[(mI(f.mes) + i) % 12]).join(" → "), +f.cuotas > 8 ? " →…" : "")), /*#__PURE__*/React.createElement("button", {
+  }, (_, i) => MESES_S[(mI(f.mes) + i + (f.metodo === "Tarjeta de Crédito" ? 1 : 0)) % 12]).join(" → "), +f.cuotas > 8 ? " →…" : ""), f.metodo === "Tarjeta de Crédito" && /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 11,
+      color: "#f39c12",
+      marginTop: 6
+    }
+  }, "💳 La 1ª cuota impacta en ", MESES[(mI(f.mes) + 1) % 12], " (cierre de tarjeta)")), /*#__PURE__*/React.createElement("button", {
     onClick: go,
     disabled: busy || !ok,
     style: {
@@ -1619,10 +1639,10 @@ function Hist({
     if (mode === "month") {
       const m = mI(month);
       arr = arr.filter(e => {
-        const em = mI(e.mes);
-        if (em < 0) return true;
-        const cu = e.cuotas || 1;
-        return m >= em && m < em + cu;
+        const st = cuoStart(e);
+        if (st < 0) return true;
+        const cu = Number(e.cuotas) || 1;
+        return m >= st && m < st + cu;
       });
     } else if (mode === "range") {
       const fD = new Date(from);
@@ -1884,7 +1904,7 @@ function Hist({
   }, "Sin gastos")) : list.map(e => {
     const cu = e.cuotas || 1;
     const mc = e.monto / cu;
-    const cNum = mode === "month" ? mI(month) - mI(e.mes) + 1 : 1;
+    const cNum = mode === "month" ? mI(month) - cuoStart(e) + 1 : 1;
     const sp = parseSplit(e.descripcion);
     return /*#__PURE__*/React.createElement("div", {
       key: e.id || e.row,
@@ -1935,7 +1955,7 @@ function Hist({
         color: e.persona === "Brandon" ? "#4A6378" : "#8FB07A",
         fontWeight: 600
       }
-    }, e.persona), " · ", e.metodo, cu > 1 ? ` · ${cNum > 0 && cNum <= cu ? cNum : 1}/${cu}` : "", " · ", e.fecha, sp.kind !== "50/50" && /*#__PURE__*/React.createElement("span", {
+    }, e.persona), " · ", e.metodo, cu > 1 ? ` · ${cNum > 0 && cNum <= cu ? cNum : 1}/${cu}` : "", " · ", fmtFecha(e.fecha), sp.kind !== "50/50" && /*#__PURE__*/React.createElement("span", {
       style: {
         marginLeft: 6,
         padding: "1px 6px",
@@ -2260,7 +2280,7 @@ function Bal({
       color: "#555",
       marginTop: 2
     }
-  }, s.fecha)), /*#__PURE__*/React.createElement("div", {
+  }, fmtFecha(s.fecha))), /*#__PURE__*/React.createElement("div", {
     style: {
       fontSize: 14,
       fontWeight: 700,

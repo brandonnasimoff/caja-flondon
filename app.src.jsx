@@ -32,6 +32,9 @@ const parseFecha=(s)=>{
   const d=new Date(str);return isNaN(d)?null:d;
 };
 const ymd=d=>d.toISOString().slice(0,10);
+// Tarjeta de Crédito en cuotas: la 1ª cuota impacta el mes SIGUIENTE al de la compra (cierre de tarjeta)
+const cuoStart=e=>{const em=mI(e.mes);if(em<0)return em;const cu=Number(e.cuotas)||1;return em+((e.metodo==="Tarjeta de Crédito"&&cu>1)?1:0)};
+const fmtFecha=f=>{const d=parseFecha(f);return d?String(d.getDate()).padStart(2,"0")+"/"+String(d.getMonth()+1).padStart(2,"0"):(f||"")};
 
 // SPLIT encoding inside descripcion: " [#sp=B]" personal de Brandon, " [#sp=F]" personal de Flor, " [#sp=70/30]" custom %
 const SPLIT_RE=/\s*\[#sp=([^\]]+)\]\s*$/;
@@ -150,9 +153,10 @@ function App(){
     CATS.forEach(c=>bCat[c]={t:0,B:0,F:0});
     METS.forEach(mt=>bMet[mt]=0);
     expenses.forEach(e=>{
-      const em=mI(e.mes);const cu=Number(e.cuotas)||1;const mc=Number(e.monto||0)/cu;
-      if(em<0)return;
-      if(m>=em&&m<em+cu){
+      const cu=Number(e.cuotas)||1;const mc=Number(e.monto||0)/cu;
+      const st=cuoStart(e);
+      if(st<0)return;
+      if(m>=st&&m<st+cu){
         const sp=parseSplit(e.descripcion);
         tot+=mc;
         if(e.persona==="Brandon")brPaid+=mc;else flPaid+=mc;
@@ -176,7 +180,7 @@ function App(){
     for(let off=5;off>=0;off--){
       const i=sel-off;if(i<0){arr.push({m:"",v:0,sel:false});continue;}
       let t=0;
-      expenses.forEach(e=>{const em=mI(e.mes);const cu=e.cuotas||1;if(i>=em&&i<em+cu)t+=e.monto/cu});
+      expenses.forEach(e=>{const st=cuoStart(e);if(st<0)return;const cu=Number(e.cuotas)||1;if(i>=st&&i<st+cu)t+=e.monto/cu});
       arr.push({m:MESES_S[i],v:t,sel:i===sel});
     }
     return arr;
@@ -188,7 +192,7 @@ function App(){
     for(let off=1;off<=6;off++){
       const i=sel+off;if(i>11)break;
       const items=[];let total=0;
-      expenses.forEach(e=>{const em=mI(e.mes);const cu=e.cuotas||1;if(i>=em&&i<em+cu&&cu>1){const mc=e.monto/cu;items.push({...e,mc,n:i-em+1,cu});total+=mc;}});
+      expenses.forEach(e=>{const st=cuoStart(e);if(st<0)return;const cu=Number(e.cuotas)||1;if(i>=st&&i<st+cu&&cu>1){const mc=e.monto/cu;items.push({...e,mc,n:i-st+1,cu});total+=mc;}});
       if(total>0)arr.push({mes:MESES[i],total,items});
     }
     return arr;
@@ -206,7 +210,7 @@ function App(){
   // ============= Filtered expenses for current dashboard view =============
   const mExp=useMemo(()=>{
     const m=mI(month);
-    return expenses.filter(e=>{const em=mI(e.mes);const cu=e.cuotas||1;return m>=em&&m<em+cu});
+    return expenses.filter(e=>{const st=cuoStart(e);if(st<0)return false;const cu=Number(e.cuotas)||1;return m>=st&&m<st+cu});
   },[expenses,month]);
 
   // CONFIG SCREEN
@@ -484,7 +488,8 @@ function Add({onAdd,onUpd,editing,prefill,month,onDone}){
       <div style={{background:"#152218",border:"1px solid #264030",borderRadius:10,padding:"12px 14px",marginBottom:16}}>
         <div style={{fontSize:11,color:"#8FB07A",fontWeight:600,marginBottom:4}}>CUOTAS</div>
         <div style={{fontSize:13,color:"#ccc"}}>{+f.cuotas} cuotas de <b style={{color:"#8FB07A"}}>{fmt(+f.monto/+f.cuotas)}</b></div>
-        <div style={{fontSize:11,color:"#666",marginTop:4}}>{Array.from({length:Math.min(+f.cuotas,8)},(_,i)=>MESES_S[(mI(f.mes)+i)%12]).join(" → ")}{+f.cuotas>8?" →…":""}</div>
+        <div style={{fontSize:11,color:"#666",marginTop:4}}>{Array.from({length:Math.min(+f.cuotas,8)},(_,i)=>MESES_S[(mI(f.mes)+i+(f.metodo==="Tarjeta de Crédito"?1:0))%12]).join(" → ")}{+f.cuotas>8?" →…":""}</div>
+        {f.metodo==="Tarjeta de Crédito"&&<div style={{fontSize:11,color:"#f39c12",marginTop:6}}>💳 La 1ª cuota impacta en {MESES[(mI(f.mes)+1)%12]} (cierre de tarjeta)</div>}
       </div>
     )}
 
@@ -509,7 +514,7 @@ function Hist({allExps,month,onDel,onEdit,onDup}){
     let arr=allExps;
     if(mode==="month"){
       const m=mI(month);
-      arr=arr.filter(e=>{const em=mI(e.mes);if(em<0)return true;const cu=e.cuotas||1;return m>=em&&m<em+cu});
+      arr=arr.filter(e=>{const st=cuoStart(e);if(st<0)return true;const cu=Number(e.cuotas)||1;return m>=st&&m<st+cu});
     }else if(mode==="range"){
       const fD=new Date(from);const tD=new Date(to);tD.setHours(23,59,59);
       arr=arr.filter(e=>{const d=parseFecha(e.fecha);if(!d){const em=mI(e.mes);if(em<0)return true;const fb=new Date(yearNow,em,15);return fb>=fD&&fb<=tD;}return d>=fD&&d<=tD});
@@ -561,7 +566,7 @@ function Hist({allExps,month,onDel,onEdit,onDup}){
     {list.length===0?(
       <div style={{textAlign:"center",padding:"50px 0",color:"#444"}}><div style={{fontSize:40}}>📭</div><div style={{marginTop:8}}>Sin gastos</div></div>
     ):list.map(e=>{
-      const cu=e.cuotas||1;const mc=e.monto/cu;const cNum=mode==="month"?mI(month)-mI(e.mes)+1:1;
+      const cu=e.cuotas||1;const mc=e.monto/cu;const cNum=mode==="month"?mI(month)-cuoStart(e)+1:1;
       const sp=parseSplit(e.descripcion);
       return(<div key={e.id||e.row} style={{...S.card,padding:"12px 14px",marginBottom:6}}>
         <div style={{display:"flex",justifyContent:"space-between",gap:8}}>
@@ -570,7 +575,7 @@ function Hist({allExps,month,onDel,onEdit,onDup}){
             <div style={{minWidth:0,flex:1}}>
               <div style={{fontSize:14,fontWeight:700,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{sp.clean||e.categoria}</div>
               <div style={{fontSize:11,color:"#666",marginTop:2}}>
-                <span style={{color:e.persona==="Brandon"?"#4A6378":"#8FB07A",fontWeight:600}}>{e.persona}</span> · {e.metodo}{cu>1?` · ${cNum>0&&cNum<=cu?cNum:1}/${cu}`:""} · {e.fecha}
+                <span style={{color:e.persona==="Brandon"?"#4A6378":"#8FB07A",fontWeight:600}}>{e.persona}</span> · {e.metodo}{cu>1?` · ${cNum>0&&cNum<=cu?cNum:1}/${cu}`:""} · {fmtFecha(e.fecha)}
                 {sp.kind!=="50/50"&&<span style={{marginLeft:6,padding:"1px 6px",background:"#1a1e2a",borderRadius:4,color:"#8FB07A",fontSize:10,fontWeight:700}}>{sp.kind==="personal"?`Solo ${sp.personal[0]}`:`${Math.round(sp.brPct*100)}/${100-Math.round(sp.brPct*100)}`}</span>}
               </div>
             </div>
@@ -644,7 +649,7 @@ function Bal({d,month,onSettle,setts}){
       <div style={{...S.sLabel,marginBottom:10}}>Pagos saldados</div>
       {setts.map((s,i)=>(<div key={i} style={{...S.card,padding:"10px 14px",marginBottom:6,background:"#152218",borderColor:"#264030"}}>
         <div style={{display:"flex",justifyContent:"space-between"}}>
-          <div><div style={{fontSize:13,fontWeight:600,color:"#8FB07A"}}>{s.from} → {s.to}</div>{s.nota&&<div style={{fontSize:11,color:"#666"}}>{s.nota}</div>}<div style={{fontSize:10,color:"#555",marginTop:2}}>{s.fecha}</div></div>
+          <div><div style={{fontSize:13,fontWeight:600,color:"#8FB07A"}}>{s.from} → {s.to}</div>{s.nota&&<div style={{fontSize:11,color:"#666"}}>{s.nota}</div>}<div style={{fontSize:10,color:"#555",marginTop:2}}>{fmtFecha(s.fecha)}</div></div>
           <div style={{fontSize:14,fontWeight:700,color:"#8FB07A"}}>{fmtK(s.monto)}</div>
         </div>
       </div>))}
