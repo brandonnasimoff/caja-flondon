@@ -2,10 +2,10 @@ const {useState,useEffect,useCallback,useMemo,useRef}=React;
 
 const MESES=["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"];
 const MESES_S=["Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dic"];
-const CATS=["Alquiler","Expensas","Servicios","Comida","Compras","Muebles","Accesorios","Arreglos","Transporte","Salud","Entretenimiento","Otros"];
+const CATS=["Servicios","Alquiler","Salidas","Compras del hogar","Personal"];
 const PERS=["Brandon","Florencia"];
 const METS=["Efectivo","Débito","Tarjeta de Crédito"];
-const ICONS={"Alquiler":"🏠","Expensas":"🏢","Servicios":"⚡","Comida":"🛒","Compras":"🛍️","Muebles":"🪑","Accesorios":"💡","Arreglos":"🔧","Transporte":"🚗","Salud":"💊","Entretenimiento":"🎬","Otros":"📦"};
+const ICONS={"Servicios":"⚡","Alquiler":"🏠","Salidas":"🍽️","Compras del hogar":"🛒","Personal":"👤","Expensas":"🏢","Comida":"🛒","Compras":"🛍️","Muebles":"🪑","Accesorios":"💡","Arreglos":"🔧","Transporte":"🚗","Salud":"💊","Entretenimiento":"🎬","Otros":"📦"};
 
 const fmt=n=>{const a=Math.abs(Math.round(n));return(n<0?"-":"")+"$"+a.toLocaleString("es-AR")};
 const fmtK=n=>{const a=Math.abs(n);if(a>=1e6)return(n<0?"-":"")+"$"+(a/1e6).toFixed(a>=1e7?0:1)+"M";if(a>=1e3)return(n<0?"-":"")+"$"+Math.round(a/1e3)+"K";return fmt(n)};
@@ -35,6 +35,9 @@ const ymd=d=>d.toISOString().slice(0,10);
 // Tarjeta de Crédito: TODO pago con crédito impacta el mes SIGUIENTE al de la compra (cierre de tarjeta)
 const cuoStart=e=>{const em=mI(e.mes);if(em<0)return em;return em+(e.metodo==="Tarjeta de Crédito"?1:0)};
 const fmtFecha=f=>{const d=parseFecha(f);return d?String(d.getDate()).padStart(2,"0")+"/"+String(d.getMonth()+1).padStart(2,"0"):(f||"")};
+const isoToday=()=>{const d=new Date();return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0")};
+const anyToISO=f=>{const d=parseFecha(f)||new Date();return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0")};
+const isoToDDMM=iso=>{const p=String(iso||"").split("-");return p.length===3?p[2]+"/"+p[1]:todayShort()};
 
 // SPLIT encoding inside descripcion: " [#sp=B]" personal de Brandon, " [#sp=F]" personal de Flor, " [#sp=70/30]" custom %
 const SPLIT_RE=/\s*\[#sp=([^\]]+)\]\s*$/;
@@ -161,7 +164,7 @@ function App(){
         tot+=mc;
         if(e.persona==="Brandon")brPaid+=mc;else flPaid+=mc;
         brOwes+=mc*sp.brPct;flOwes+=mc*sp.flPct;
-        if(bCat[e.categoria]){bCat[e.categoria].t+=mc;bCat[e.categoria][e.persona[0]]+=mc}
+        if(e.categoria){if(!bCat[e.categoria])bCat[e.categoria]={t:0,B:0,F:0};bCat[e.categoria].t+=mc;bCat[e.categoria][e.persona[0]]+=mc}
         if(bMet[e.metodo]!==undefined)bMet[e.metodo]+=mc;
       }
     });
@@ -345,7 +348,7 @@ function Dash({d,budget,month,updBudget,trend,proj,cuotas}){
     </div>
 
     <div style={{...S.sLabel,marginBottom:10,marginTop:8}}>Gastos por categoría</div>
-    {CATS.filter(c=>d.bCat[c].t>0).sort((a,b)=>d.bCat[b].t-d.bCat[a].t).map(c=>{
+    {Object.keys(d.bCat).filter(c=>d.bCat[c].t>0).sort((a,b)=>d.bCat[b].t-d.bCat[a].t).map(c=>{
       const x=d.bCat[c];const p=d.tot>0?(x.t/d.tot)*100:0;
       return(<div key={c} style={{...S.card,padding:"10px 14px",marginBottom:6}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
@@ -363,7 +366,7 @@ function Dash({d,budget,month,updBudget,trend,proj,cuotas}){
         <div style={{background:"#0d0f14",borderRadius:3,height:3,marginTop:6,overflow:"hidden"}}><div style={{height:"100%",width:`${p}%`,background:"#8FB07A",borderRadius:3}}/></div>
       </div>);
     })}
-    {CATS.every(c=>d.bCat[c].t===0)&&<div style={{textAlign:"center",padding:"30px 0",color:"#444"}}><div style={{fontSize:32}}>📭</div><div style={{marginTop:6,fontSize:13}}>Sin gastos en {month}</div></div>}
+    {Object.keys(d.bCat).every(c=>d.bCat[c].t===0)&&<div style={{textAlign:"center",padding:"30px 0",color:"#444"}}><div style={{fontSize:32}}>📭</div><div style={{marginTop:6,fontSize:13}}>Sin gastos en {month}</div></div>}
 
     <div style={{...S.sLabel,marginBottom:10,marginTop:8}}>Métodos de pago</div>
     <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,marginBottom:14}}>
@@ -392,9 +395,9 @@ function Add({onAdd,onUpd,editing,prefill,month,onDone}){
   const initial=()=>{
     if(prefill){
       const sp=parseSplit(prefill.descripcion);
-      return{fecha:prefill.fecha||todayShort(),mes:prefill.mes||month,categoria:prefill.categoria||"",descripcion:sp.clean,persona:prefill.persona||"",metodo:prefill.metodo||"",monto:String(prefill.monto||""),cuotas:String(prefill.cuotas||1),split:sp.kind,personal:sp.personal||"",brPct:Math.round(sp.brPct*100)};
+      return{fecha:anyToISO(prefill.fecha),mes:prefill.mes||month,categoria:prefill.categoria||"",descripcion:sp.clean,persona:prefill.persona||"",metodo:prefill.metodo||"",monto:String(prefill.monto||""),cuotas:String(prefill.cuotas||1),split:sp.kind,personal:sp.personal||"",brPct:Math.round(sp.brPct*100)};
     }
-    return{fecha:todayShort(),mes:month,categoria:last.categoria||"",descripcion:"",persona:last.persona||"",metodo:last.metodo||"",monto:"",cuotas:"1",split:"50/50",personal:"",brPct:50};
+    return{fecha:isoToday(),mes:month,categoria:CATS.includes(last.categoria)?last.categoria:"",descripcion:"",persona:last.persona||"",metodo:last.metodo||"",monto:"",cuotas:"1",split:"50/50",personal:"",brPct:50};
   };
   const [f,sF]=useState(initial);
   const [busy,setBusy]=useState(false);
@@ -413,7 +416,7 @@ function Add({onAdd,onUpd,editing,prefill,month,onDone}){
     if(!ok)return;setBusy(true);
     const sp=f.split==="personal"?{kind:"personal",personal:f.personal}:f.split==="custom"?{kind:"custom",brPct:f.brPct/100,flPct:(100-f.brPct)/100}:{kind:"50/50"};
     const desc=encodeSplit(f.descripcion.trim(),sp);
-    const exp={fecha:f.fecha,mes:f.mes,categoria:f.categoria,descripcion:desc,persona:f.persona,metodo:f.metodo,monto:+f.monto,cuotas:+f.cuotas||1};
+    const exp={fecha:isoToDDMM(f.fecha),mes:f.mes,categoria:f.categoria,descripcion:desc,persona:f.persona,metodo:f.metodo,monto:+f.monto,cuotas:+f.cuotas||1};
     if(editing)await onUpd(editing.row,exp);else await onAdd(exp);
     localStorage.setItem(LS.lastVals,JSON.stringify({categoria:f.categoria,persona:f.persona,metodo:f.metodo}));
     setBusy(false);onDone();
@@ -481,7 +484,7 @@ function Add({onAdd,onUpd,editing,prefill,month,onDone}){
 
     <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:16}}>
       <div><div style={S.sLabel}>Mes</div><select value={f.mes} onChange={e=>u("mes",e.target.value)} style={{...S.input,marginTop:6,cursor:"pointer"}}>{MESES.map(m=><option key={m}>{m}</option>)}</select></div>
-      <div><div style={S.sLabel}>Fecha (dd/mm)</div><input type="text" inputMode="numeric" value={f.fecha} onChange={e=>u("fecha",e.target.value)} placeholder="30/04" style={{...S.input,marginTop:6}}/></div>
+      <div><div style={S.sLabel}>Fecha del gasto</div><input type="date" value={f.fecha} max={isoToday()} onChange={e=>{const v=e.target.value;sF(p=>({...p,fecha:v,mes:v?MESES[new Date(v+"T12:00:00").getMonth()]:p.mes}))}} style={{...S.input,marginTop:6,colorScheme:"dark"}}/></div>
     </div>
 
     {f.metodo==="Tarjeta de Crédito"&&+f.cuotas===1&&(
@@ -563,7 +566,7 @@ function Hist({allExps,month,onDel,onEdit,onDup}){
         {["all","Brandon","Florencia"].map(p=>(<button key={p} onClick={()=>setFiltP(p)} style={{padding:8,borderRadius:6,border:`1px solid ${filtP===p?"#8FB07A":"#222840"}`,background:filtP===p?"#152218":"transparent",color:filtP===p?"#8FB07A":"#888",fontSize:11,fontWeight:600,cursor:"pointer"}}>{p==="all"?"Todos":p}</button>))}
       </div>
       <div style={S.sLabel}>Categoría</div>
-      <select value={filtCat} onChange={e=>setFiltCat(e.target.value)} style={{...S.input,marginTop:6,marginBottom:12,cursor:"pointer"}}><option value="all">Todas</option>{CATS.map(c=><option key={c}>{c}</option>)}</select>
+      <select value={filtCat} onChange={e=>setFiltCat(e.target.value)} style={{...S.input,marginTop:6,marginBottom:12,cursor:"pointer"}}><option value="all">Todas</option>{[...new Set([...CATS,...allExps.map(e=>e.categoria).filter(Boolean)])].map(c=><option key={c}>{c}</option>)}</select>
       <div style={S.sLabel}>Método</div>
       <select value={filtMet} onChange={e=>setFiltMet(e.target.value)} style={{...S.input,marginTop:6,cursor:"pointer"}}><option value="all">Todos</option>{METS.map(m=><option key={m}>{m}</option>)}</select>
       {activeFilters>0&&<button onClick={clearFilters} style={{marginTop:12,width:"100%",padding:10,borderRadius:8,border:"1px solid #e74c3c",background:"transparent",color:"#e74c3c",fontSize:12,cursor:"pointer"}}>Limpiar filtros</button>}

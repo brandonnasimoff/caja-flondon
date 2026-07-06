@@ -7,13 +7,16 @@ const {
 } = React;
 const MESES = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"];
 const MESES_S = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"];
-const CATS = ["Alquiler", "Expensas", "Servicios", "Comida", "Compras", "Muebles", "Accesorios", "Arreglos", "Transporte", "Salud", "Entretenimiento", "Otros"];
+const CATS = ["Servicios", "Alquiler", "Salidas", "Compras del hogar", "Personal"];
 const PERS = ["Brandon", "Florencia"];
 const METS = ["Efectivo", "Débito", "Tarjeta de Crédito"];
 const ICONS = {
-  "Alquiler": "🏠",
-  "Expensas": "🏢",
   "Servicios": "⚡",
+  "Alquiler": "🏠",
+  "Salidas": "🍽️",
+  "Compras del hogar": "🛒",
+  "Personal": "👤",
+  "Expensas": "🏢",
   "Comida": "🛒",
   "Compras": "🛍️",
   "Muebles": "🪑",
@@ -80,6 +83,18 @@ const cuoStart = e => {
 const fmtFecha = f => {
   const d = parseFecha(f);
   return d ? String(d.getDate()).padStart(2, "0") + "/" + String(d.getMonth() + 1).padStart(2, "0") : f || "";
+};
+const isoToday = () => {
+  const d = new Date();
+  return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
+};
+const anyToISO = f => {
+  const d = parseFecha(f) || new Date();
+  return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
+};
+const isoToDDMM = iso => {
+  const p = String(iso || "").split("-");
+  return p.length === 3 ? p[2] + "/" + p[1] : todayShort();
 };
 
 // SPLIT encoding inside descripcion: " [#sp=B]" personal de Brandon, " [#sp=F]" personal de Flor, " [#sp=70/30]" custom %
@@ -363,7 +378,12 @@ function App() {
         if (e.persona === "Brandon") brPaid += mc;else flPaid += mc;
         brOwes += mc * sp.brPct;
         flOwes += mc * sp.flPct;
-        if (bCat[e.categoria]) {
+        if (e.categoria) {
+          if (!bCat[e.categoria]) bCat[e.categoria] = {
+            t: 0,
+            B: 0,
+            F: 0
+          };
           bCat[e.categoria].t += mc;
           bCat[e.categoria][e.persona[0]] += mc;
         }
@@ -1020,7 +1040,7 @@ function Dash({
       marginBottom: 10,
       marginTop: 8
     }
-  }, "Gastos por categoría"), CATS.filter(c => d.bCat[c].t > 0).sort((a, b) => d.bCat[b].t - d.bCat[a].t).map(c => {
+  }, "Gastos por categoría"), Object.keys(d.bCat).filter(c => d.bCat[c].t > 0).sort((a, b) => d.bCat[b].t - d.bCat[a].t).map(c => {
     const x = d.bCat[c];
     const p = d.tot > 0 ? x.t / d.tot * 100 : 0;
     return /*#__PURE__*/React.createElement("div", {
@@ -1098,7 +1118,7 @@ function Dash({
         borderRadius: 3
       }
     })));
-  }), CATS.every(c => d.bCat[c].t === 0) && /*#__PURE__*/React.createElement("div", {
+  }), Object.keys(d.bCat).every(c => d.bCat[c].t === 0) && /*#__PURE__*/React.createElement("div", {
     style: {
       textAlign: "center",
       padding: "30px 0",
@@ -1205,7 +1225,7 @@ function Add({
     if (prefill) {
       const sp = parseSplit(prefill.descripcion);
       return {
-        fecha: prefill.fecha || todayShort(),
+        fecha: anyToISO(prefill.fecha),
         mes: prefill.mes || month,
         categoria: prefill.categoria || "",
         descripcion: sp.clean,
@@ -1219,9 +1239,9 @@ function Add({
       };
     }
     return {
-      fecha: todayShort(),
+      fecha: isoToday(),
       mes: month,
-      categoria: last.categoria || "",
+      categoria: CATS.includes(last.categoria) ? last.categoria : "",
       descripcion: "",
       persona: last.persona || "",
       metodo: last.metodo || "",
@@ -1265,7 +1285,7 @@ function Add({
     };
     const desc = encodeSplit(f.descripcion.trim(), sp);
     const exp = {
-      fecha: f.fecha,
+      fecha: isoToDDMM(f.fecha),
       mes: f.mes,
       categoria: f.categoria,
       descripcion: desc,
@@ -1549,15 +1569,22 @@ function Add({
     key: m
   }, m)))), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
     style: S.sLabel
-  }, "Fecha (dd/mm)"), /*#__PURE__*/React.createElement("input", {
-    type: "text",
-    inputMode: "numeric",
+  }, "Fecha del gasto"), /*#__PURE__*/React.createElement("input", {
+    type: "date",
     value: f.fecha,
-    onChange: e => u("fecha", e.target.value),
-    placeholder: "30/04",
+    max: isoToday(),
+    onChange: e => {
+      const v = e.target.value;
+      sF(p => ({
+        ...p,
+        fecha: v,
+        mes: v ? MESES[new Date(v + "T12:00:00").getMonth()] : p.mes
+      }));
+    },
     style: {
       ...S.input,
-      marginTop: 6
+      marginTop: 6,
+      colorScheme: "dark"
     }
   }))), f.metodo === "Tarjeta de Crédito" && +f.cuotas === 1 && /*#__PURE__*/React.createElement("div", {
     style: {
@@ -1867,7 +1894,7 @@ function Hist({
     }
   }, /*#__PURE__*/React.createElement("option", {
     value: "all"
-  }, "Todas"), CATS.map(c => /*#__PURE__*/React.createElement("option", {
+  }, "Todas"), [...new Set([...CATS, ...allExps.map(e => e.categoria).filter(Boolean)])].map(c => /*#__PURE__*/React.createElement("option", {
     key: c
   }, c))), /*#__PURE__*/React.createElement("div", {
     style: S.sLabel
