@@ -1678,7 +1678,9 @@ function Hist({
         const st = cuoStart(e);
         if (st < 0) return true;
         const cu = Number(e.cuotas) || 1;
-        return m >= st && m < st + cu;
+        if (m >= st && m < st + cu) return true;
+        const em = mI(e.mes);
+        return em === m && st > m; // gasto con TC recien cargado: todavia no impacta, se muestra como pendiente
       });
     } else if (mode === "range") {
       const fD = new Date(from);
@@ -1704,7 +1706,8 @@ function Hist({
     }
     return arr;
   }, [allExps, month, mode, from, to, filtP, filtCat, filtMet, search, yearNow]);
-  const total = list.reduce((a, e) => a + e.monto / (e.cuotas || 1), 0);
+  const isPending = e => mode === "month" && mI(e.mes) === mI(month) && cuoStart(e) > mI(month);
+  const total = list.reduce((a, e) => isPending(e) ? a : a + e.monto / (e.cuotas || 1), 0);
   const activeFilters = (filtP !== "all" ? 1 : 0) + (filtCat !== "all" ? 1 : 0) + (filtMet !== "all" ? 1 : 0) + (search.trim() ? 1 : 0);
   const clearFilters = () => {
     setFiltP("all");
@@ -1940,14 +1943,21 @@ function Hist({
   }, "Sin gastos")) : list.map(e => {
     const cu = e.cuotas || 1;
     const mc = e.monto / cu;
-    const cNum = mode === "month" ? mI(month) - cuoStart(e) + 1 : 1;
+    const st = cuoStart(e);
+    const cNum = mode === "month" ? mI(month) - st + 1 : 1;
+    const pending = isPending(e);
     const sp = parseSplit(e.descripcion);
     return /*#__PURE__*/React.createElement("div", {
       key: e.id || e.row,
       style: {
         ...S.card,
         padding: "12px 14px",
-        marginBottom: 6
+        marginBottom: 6,
+        ...(pending ? {
+          borderStyle: "dashed",
+          borderColor: "#4a3a1a",
+          background: "#171410"
+        } : {})
       }
     }, /*#__PURE__*/React.createElement("div", {
       style: {
@@ -1978,7 +1988,11 @@ function Hist({
         fontWeight: 700,
         whiteSpace: "nowrap",
         overflow: "hidden",
-        textOverflow: "ellipsis"
+        textOverflow: "ellipsis",
+        textDecoration: pending ? "underline" : "none",
+        textDecorationColor: "#f39c12",
+        textDecorationStyle: "dashed",
+        textUnderlineOffset: 3
       }
     }, sp.clean || e.categoria), /*#__PURE__*/React.createElement("div", {
       style: {
@@ -1991,7 +2005,7 @@ function Hist({
         color: e.persona === "Brandon" ? "#4A6378" : "#8FB07A",
         fontWeight: 600
       }
-    }, e.persona), " · ", e.metodo, cu > 1 ? ` · ${cNum > 0 && cNum <= cu ? cNum : 1}/${cu}` : "", " · ", fmtFecha(e.fecha), sp.kind !== "50/50" && /*#__PURE__*/React.createElement("span", {
+    }, e.persona), " · ", e.metodo, !pending && cu > 1 ? ` · ${cNum > 0 && cNum <= cu ? cNum : 1}/${cu}` : "", " · ", fmtFecha(e.fecha), sp.kind !== "50/50" && /*#__PURE__*/React.createElement("span", {
       style: {
         marginLeft: 6,
         padding: "1px 6px",
@@ -2001,7 +2015,14 @@ function Hist({
         fontSize: 10,
         fontWeight: 700
       }
-    }, sp.kind === "personal" ? `Solo ${sp.personal[0]}` : `${Math.round(sp.brPct * 100)}/${100 - Math.round(sp.brPct * 100)}`)))), /*#__PURE__*/React.createElement("div", {
+    }, sp.kind === "personal" ? `Solo ${sp.personal[0]}` : `${Math.round(sp.brPct * 100)}/${100 - Math.round(sp.brPct * 100)}`)), pending && /*#__PURE__*/React.createElement("div", {
+      style: {
+        fontSize: 10,
+        color: "#f39c12",
+        fontWeight: 700,
+        marginTop: 3
+      }
+    }, "💳 Impacta en ", MESES[st % 12], cu > 1 ? ` (${cu} cuotas)` : "", " · no descuenta este mes"))), /*#__PURE__*/React.createElement("div", {
       style: {
         textAlign: "right",
         flexShrink: 0
@@ -2009,9 +2030,10 @@ function Hist({
     }, /*#__PURE__*/React.createElement("div", {
       style: {
         fontSize: 14,
-        fontWeight: 700
+        fontWeight: 700,
+        opacity: pending ? 0.55 : 1
       }
-    }, fmtK(mc)), cu > 1 && /*#__PURE__*/React.createElement("div", {
+    }, fmtK(mc)), cu > 1 && !pending && /*#__PURE__*/React.createElement("div", {
       style: {
         fontSize: 10,
         color: "#666"

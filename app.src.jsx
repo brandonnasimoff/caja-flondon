@@ -523,7 +523,13 @@ function Hist({allExps,month,onDel,onEdit,onDup}){
     let arr=allExps;
     if(mode==="month"){
       const m=mI(month);
-      arr=arr.filter(e=>{const st=cuoStart(e);if(st<0)return true;const cu=Number(e.cuotas)||1;return m>=st&&m<st+cu});
+      arr=arr.filter(e=>{
+        const st=cuoStart(e);if(st<0)return true;
+        const cu=Number(e.cuotas)||1;
+        if(m>=st&&m<st+cu)return true;
+        const em=mI(e.mes);
+        return em===m&&st>m; // gasto con TC recien cargado: todavia no impacta, se muestra como pendiente
+      });
     }else if(mode==="range"){
       const fD=new Date(from);const tD=new Date(to);tD.setHours(23,59,59);
       arr=arr.filter(e=>{const d=parseFecha(e.fecha);if(!d){const em=mI(e.mes);if(em<0)return true;const fb=new Date(yearNow,em,15);return fb>=fD&&fb<=tD;}return d>=fD&&d<=tD});
@@ -535,7 +541,8 @@ function Hist({allExps,month,onDel,onEdit,onDup}){
     return arr;
   },[allExps,month,mode,from,to,filtP,filtCat,filtMet,search,yearNow]);
 
-  const total=list.reduce((a,e)=>a+(e.monto/(e.cuotas||1)),0);
+  const isPending=e=>mode==="month"&&mI(e.mes)===mI(month)&&cuoStart(e)>mI(month);
+  const total=list.reduce((a,e)=>isPending(e)?a:a+(e.monto/(e.cuotas||1)),0);
   const activeFilters=(filtP!=="all"?1:0)+(filtCat!=="all"?1:0)+(filtMet!=="all"?1:0)+(search.trim()?1:0);
   const clearFilters=()=>{setFiltP("all");setFiltCat("all");setFiltMet("all");setSearch("");};
 
@@ -575,23 +582,25 @@ function Hist({allExps,month,onDel,onEdit,onDup}){
     {list.length===0?(
       <div style={{textAlign:"center",padding:"50px 0",color:"#444"}}><div style={{fontSize:40}}>📭</div><div style={{marginTop:8}}>Sin gastos</div></div>
     ):list.map(e=>{
-      const cu=e.cuotas||1;const mc=e.monto/cu;const cNum=mode==="month"?mI(month)-cuoStart(e)+1:1;
+      const cu=e.cuotas||1;const mc=e.monto/cu;const st=cuoStart(e);const cNum=mode==="month"?mI(month)-st+1:1;
+      const pending=isPending(e);
       const sp=parseSplit(e.descripcion);
-      return(<div key={e.id||e.row} style={{...S.card,padding:"12px 14px",marginBottom:6}}>
+      return(<div key={e.id||e.row} style={{...S.card,padding:"12px 14px",marginBottom:6,...(pending?{borderStyle:"dashed",borderColor:"#4a3a1a",background:"#171410"}:{})}}>
         <div style={{display:"flex",justifyContent:"space-between",gap:8}}>
           <div style={{display:"flex",gap:10,flex:1,minWidth:0}}>
             <span style={{fontSize:20,marginTop:2}}>{ICONS[e.categoria]||"📦"}</span>
             <div style={{minWidth:0,flex:1}}>
-              <div style={{fontSize:14,fontWeight:700,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{sp.clean||e.categoria}</div>
+              <div style={{fontSize:14,fontWeight:700,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",textDecoration:pending?"underline":"none",textDecorationColor:"#f39c12",textDecorationStyle:"dashed",textUnderlineOffset:3}}>{sp.clean||e.categoria}</div>
               <div style={{fontSize:11,color:"#666",marginTop:2}}>
-                <span style={{color:e.persona==="Brandon"?"#4A6378":"#8FB07A",fontWeight:600}}>{e.persona}</span> · {e.metodo}{cu>1?` · ${cNum>0&&cNum<=cu?cNum:1}/${cu}`:""} · {fmtFecha(e.fecha)}
+                <span style={{color:e.persona==="Brandon"?"#4A6378":"#8FB07A",fontWeight:600}}>{e.persona}</span> · {e.metodo}{!pending&&cu>1?` · ${cNum>0&&cNum<=cu?cNum:1}/${cu}`:""} · {fmtFecha(e.fecha)}
                 {sp.kind!=="50/50"&&<span style={{marginLeft:6,padding:"1px 6px",background:"#1a1e2a",borderRadius:4,color:"#8FB07A",fontSize:10,fontWeight:700}}>{sp.kind==="personal"?`Solo ${sp.personal[0]}`:`${Math.round(sp.brPct*100)}/${100-Math.round(sp.brPct*100)}`}</span>}
               </div>
+              {pending&&<div style={{fontSize:10,color:"#f39c12",fontWeight:700,marginTop:3}}>💳 Impacta en {MESES[st%12]}{cu>1?` (${cu} cuotas)`:""} · no descuenta este mes</div>}
             </div>
           </div>
           <div style={{textAlign:"right",flexShrink:0}}>
-            <div style={{fontSize:14,fontWeight:700}}>{fmtK(mc)}</div>
-            {cu>1&&<div style={{fontSize:10,color:"#666"}}>Tot {fmtK(e.monto)}</div>}
+            <div style={{fontSize:14,fontWeight:700,opacity:pending?0.55:1}}>{fmtK(mc)}</div>
+            {cu>1&&!pending&&<div style={{fontSize:10,color:"#666"}}>Tot {fmtK(e.monto)}</div>}
           </div>
         </div>
         {del===e.row?(
